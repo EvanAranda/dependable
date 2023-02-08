@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, List, Iterable, Sequence
 
 from di_ioc import ServiceContainer, scoped, auto
 
@@ -23,6 +23,19 @@ class Service:
     @staticmethod
     def create_default(dep1: Dep1, dep2: Dep2 = None) -> 'Service':
         return Service(dep1, dep2)
+
+
+class ServiceWithListDep:
+    def __init__(self, deps: Iterable[Dep1]):
+        self.deps = deps
+
+    @staticmethod
+    def with_list(deps: List[Dep1]):
+        return ServiceWithListDep(deps)
+
+    @staticmethod
+    def with_seq(deps: Sequence[Dep1]):
+        return ServiceWithListDep(deps)
 
 
 def test_derive():
@@ -52,3 +65,30 @@ def test_derive_default_deps():
     service = container.get_service(Service)
     assert service.dep1 is not None
     assert service.dep2 is None
+
+
+def test_derive_iter_dep():
+    container = ServiceContainer()
+    container[Dep1] = auto(Dep1)
+    container[ServiceWithListDep] = auto(ServiceWithListDep)
+    service = container.get_service(ServiceWithListDep)
+    assert isinstance(service.deps, list)
+    assert len(service.deps) == 1
+
+
+def test_derive_list_dep():
+    container = ServiceContainer()
+    container[Dep1] = auto(Dep1)
+    container[ServiceWithListDep] = auto(ServiceWithListDep.with_list)
+    service = container.get_service(ServiceWithListDep)
+    assert isinstance(service.deps, list)
+    assert len(service.deps) == 1
+
+
+def test_derive_seq_dep():
+    container = ServiceContainer()
+    container[Dep1] = auto(Dep1)
+    container[ServiceWithListDep] = auto(ServiceWithListDep.with_seq)
+    service = container.get_service(ServiceWithListDep)
+    assert isinstance(service.deps, list)
+    assert len(service.deps) == 1
