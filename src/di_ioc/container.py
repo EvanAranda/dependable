@@ -1,7 +1,9 @@
+import itertools
 import logging
-from typing import Type, Optional, Mapping, Iterator, ChainMap, Self
+from typing import Type, Optional, Mapping, Iterator, ChainMap, Self, List, Sequence
 
-from .abstraction import AbstractServiceContainer, AbstractServiceProvider, ServiceFactory, TService
+from .abstraction import AbstractServiceContainer, AbstractServiceProvider, ServiceFactory, TService, \
+    MissingServiceError
 from .scope import ServiceScope
 
 log = logging.getLogger(__name__)
@@ -9,18 +11,23 @@ log = logging.getLogger(__name__)
 
 class ServiceContainer(AbstractServiceContainer, AbstractServiceProvider, ServiceScope):
 
-    def __init__(self, *factories: Mapping[Type, ServiceFactory]):
+    def __init__(self, *factories: Mapping[Type, List[ServiceFactory]]):
         super().__init__()
-        self._registry = ChainMap[Type, ServiceFactory]({}, *factories)
+        self._registry = ChainMap[Type, List[ServiceFactory]]({}, *factories)
 
     def __hash__(self) -> int:
         return id(self)
 
-    def __getitem__(self, service_type: Type[TService]) -> ServiceFactory[TService]:
+    def __getitem__(self, service_type: Type[TService]) -> Sequence[ServiceFactory[TService]]:
         return self._registry[service_type]
 
-    def __setitem__(self, service_type: Type[TService], service_factory: ServiceFactory[TService]) -> None:
-        self._registry[service_type] = service_factory
+    def __setitem__(self, service_type: Type | Sequence[Type], service_factory: ServiceFactory) -> None:
+        head = self._registry.maps[0]
+        if isinstance(service_type, Sequence):
+            for t in service_type:
+                self._add_factory(head, t, service_factory)
+        else:
+            self._add_factory(head, service_type, service_factory)
 
     def __delitem__(self, service_type: Type) -> None:
         del self._registry[service_type]
@@ -42,19 +49,32 @@ class ServiceContainer(AbstractServiceContainer, AbstractServiceProvider, Servic
     def get_service(self, service_type: Type[TService]) -> Optional[TService]:
         if issubclass(service_type, AbstractServiceProvider):
             return self.create_scope()
-
-        return service_factory(service_type, self) \
-            if (service_factory := self._registry.get(service_type, None)) \
-            else None
+        service_factory = self._registry.get(service_type, None)
+        if not service_factory:
+            return None
+        return service_factory[0](service_type, self)
 
     def get_required_service(self, service_type: Type[TService]) -> TService:
         service = self.get_service(service_type)
         if service is None:
-            raise ValueError(f'required service {service_type.__name__} is not registered.')
+            raise MissingServiceError(service_type)
         return service
+
+    def get_services(self, service_type: Type[TService]) -> List[TService]:
+        if issubclass(service_type, AbstractServiceProvider):
+            return [self.create_scope()]
+        factories = itertools.chain(*(m.get(service_type, []) for m in self._registry.maps))
+        return [f(service_type, self) for f in factories]
 
     def register(self, *other: AbstractServiceContainer):
         self._registry.maps.extend(other)
 
     def create_scope(self) -> Self:
         return ServiceContainer(self._registry)
+
+    @staticmethod
+    def _add_factory(map, key, factory: ServiceFactory):
+        if not (factories := map.get(key)):
+            factories = []
+            map[key] = factories
+        factories.append(factory)

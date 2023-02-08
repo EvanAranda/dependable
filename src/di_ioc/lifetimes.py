@@ -1,7 +1,7 @@
 import inspect
 from dataclasses import dataclass
 from typing import Callable, Type, Dict, Generator, \
-    Any
+    Any, Generic
 
 from .abstraction import AbstractServiceProvider, ServiceFactory, ServiceFactoryGenerator, TService
 from .scope import ServiceScope
@@ -48,39 +48,41 @@ def create_service_instance(t: Type, s: AbstractServiceProvider, f: Callable, cl
         return ServiceInstance(x)
 
 
-def singleton(f: ServiceFactory[TService] | ServiceFactoryGenerator[TService]) -> ServiceFactory[TService]:
-    instance: ServiceInstance | None = None
+class singleton(Generic[TService], ServiceFactory[TService]):
+    def __init__(self, f: ServiceFactory[TService] | ServiceFactoryGenerator[TService]):
+        self.f = f
+        self.instance: ServiceInstance | None = None
 
-    def cleanup(*args):
-        nonlocal instance
-        if instance:
+    def dispose(self, *args):
+        if self.instance:
+            self.instance.dispose()
+            self.instance = None
+
+    def __call__(self, t: Type, s: AbstractServiceProvider):
+        if self.instance is None:
+            self.instance = create_service_instance(t, s, self.f, self.dispose)
+        return self.instance.value
+
+    def __repr__(self):
+        return f'Singleton({self.f}, instance={self.instance})'
+
+
+class scoped(Generic[TService], ServiceFactory[TService]):
+    def __init__(self, f: ServiceFactory[TService] | ServiceFactoryGenerator[TService]):
+        self.f = f
+        self.instances: Dict[Any, ServiceInstance] = {}
+
+    def dispose(self, s: ServiceScope):
+        if instance := self.instances.get(s):
             instance.dispose()
-            instance = None
+            del self.instances[s]
 
-    def wrapper(t: Type, s: AbstractServiceProvider):
-        nonlocal instance
-        if instance is None:
-            instance = create_service_instance(t, s, f, cleanup)
+    def __call__(self, t: Type, s: AbstractServiceProvider):
+        if (instance := self.instances.get(s)) is None:
+            instance = create_service_instance(t, s, self.f, self.dispose)
+            self.instances[s] = instance
+
         return instance.value
 
-    return wrapper
-
-
-def scoped(f: ServiceFactory[TService] | ServiceFactoryGenerator[TService]) -> ServiceFactory[TService]:
-    instances: Dict[Any, ServiceInstance] = {}
-
-    def cleanup(s: ServiceScope):
-        nonlocal instances
-        if instance := instances.get(s):
-            instance.dispose()
-        del instances[s]
-
-    def wrapper(t: Type, s: AbstractServiceProvider):
-        nonlocal instances
-        if (instance := instances.get(s)) is None:
-            instance = create_service_instance(t, s, f, cleanup)
-            instances[s] = instance
-
-        return instance.value
-
-    return wrapper
+    def __repr__(self):
+        return f'Scoped({self.f}, instances={len(self.instances)})'

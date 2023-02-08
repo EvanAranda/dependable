@@ -33,6 +33,7 @@ path = "src/di_ioc/__about__.py"
 [tool.hatch.envs.default]
 type = "virtual"
 python = "python3.11"
+path = ".hatch"
 dependencies = [
   "pytest",
   "pytest-cov",
