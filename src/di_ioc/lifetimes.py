@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import Callable, Type, Dict, Generator, \
     Any, Generic
 
-from .abstraction import AbstractServiceProvider, ServiceFactory, ServiceFactoryGenerator, TService
+from .abstraction import AbstractServiceProvider, ServiceFactory, ServiceFactoryGenerator, TService, AbstractLifetime
 from .scope import ServiceScope
 
 
@@ -48,7 +48,7 @@ def create_service_instance(t: Type, s: AbstractServiceProvider, f: Callable, cl
         return ServiceInstance(x)
 
 
-class singleton(Generic[TService], ServiceFactory[TService]):
+class singleton(Generic[TService], AbstractLifetime, ServiceFactory[TService]):
     def __init__(self, f: ServiceFactory[TService] | ServiceFactoryGenerator[TService]):
         self.f = f
         self.instance: ServiceInstance | None = None
@@ -67,7 +67,7 @@ class singleton(Generic[TService], ServiceFactory[TService]):
         return f'Singleton({self.f}, instance={self.instance})'
 
 
-class scoped(Generic[TService], ServiceFactory[TService]):
+class scoped(Generic[TService], AbstractLifetime, ServiceFactory[TService]):
     def __init__(self, f: ServiceFactory[TService] | ServiceFactoryGenerator[TService]):
         self.f = f
         self.instances: Dict[Any, ServiceInstance] = {}

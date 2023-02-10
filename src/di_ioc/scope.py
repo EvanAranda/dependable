@@ -1,10 +1,12 @@
 import logging
 from typing import Callable, List
 
+from .abstraction import AbstractScope
+
 log = logging.getLogger(__name__)
 
 
-class ServiceScope:
+class ServiceScope(AbstractScope):
     def __init__(self):
         self._cleanup: List[Callable[['ServiceScope'], None]] = []
 

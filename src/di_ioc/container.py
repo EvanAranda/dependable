@@ -1,6 +1,6 @@
 import itertools
 import logging
-from typing import Type, Optional, Mapping, Iterator, ChainMap, Self, List, Sequence
+from typing import Type, Optional, Mapping, Iterator, ChainMap, Self, List, Sequence, Iterable
 
 from .abstraction import AbstractServiceContainer, AbstractServiceProvider, ServiceFactory, TService, \
     MissingServiceError
@@ -21,7 +21,7 @@ class ServiceContainer(AbstractServiceContainer, AbstractServiceProvider, Servic
     def __getitem__(self, service_type: Type[TService]) -> Sequence[ServiceFactory[TService]]:
         return self._registry[service_type]
 
-    def __setitem__(self, service_type: Type | Sequence[Type], service_factory: ServiceFactory) -> None:
+    def __setitem__(self, service_type: Type | Iterable[Type], service_factory: ServiceFactory) -> None:
         head = self._registry.maps[0]
         if isinstance(service_type, Sequence):
             for t in service_type:

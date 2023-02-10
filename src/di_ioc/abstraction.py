@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Callable, Type, TypeVar, Optional, ContextManager, Generator, \
-    Hashable, Self, MutableMapping, List, Mapping, Sequence
+    Hashable, Self, MutableMapping, List, Mapping, Iterable
 
 TService = TypeVar('TService')
 
@@ -52,7 +52,7 @@ ServiceFactory = Callable[[Type[TService], AbstractServiceProvider], TService]
 ServiceFactoryGenerator = Callable[[Type[TService], AbstractServiceProvider], DisposableServiceInstance[TService]]
 
 
-class AbstractServiceContainer(MutableMapping[Type | Sequence[Type], ServiceFactory],
+class AbstractServiceContainer(MutableMapping[Type | Iterable[Type], ServiceFactory],
                                Mapping[Type, List[ServiceFactory]],
                                ABC):
 
@@ -62,5 +62,24 @@ class AbstractServiceContainer(MutableMapping[Type | Sequence[Type], ServiceFact
         'Mount' other service containers into this one and make their services available from this one. Each mounted
         container is still distinct from this one.
         :param other:
+        :return:
+        """
+
+
+class AbstractScope(ABC):
+    @abstractmethod
+    def dispose(self) -> None:
+        """
+        Cleanup everything that needs disposed in this scope.
+        :return:
+        """
+
+
+class AbstractLifetime(ABC):
+
+    @abstractmethod
+    def dispose(self, scope: AbstractScope) -> None:
+        """
+        Cleanup at the end of lifetime.
         :return:
         """
