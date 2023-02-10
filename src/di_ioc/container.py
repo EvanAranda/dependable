@@ -1,19 +1,50 @@
-import itertools
 import logging
-from typing import Type, Optional, Mapping, Iterator, ChainMap, Self, List, Sequence, Iterable
+from typing import Type, Optional, Mapping, Iterator, ChainMap, Self, List, Sequence, Iterable, Protocol
 
 from .abstraction import AbstractServiceContainer, AbstractServiceProvider, ServiceFactory, TService, \
-    MissingServiceError
+    MissingServiceError, Request, BasicRequest, AbstractServiceRequest
 from .scope import ServiceScope
 
 log = logging.getLogger(__name__)
 
 
+class Resolver(Protocol):
+
+    @staticmethod
+    def resolve(req: AbstractServiceRequest,
+                services: Mapping[Type, List[ServiceFactory]]) -> Optional[ServiceFactory]:
+        f = services.get(req.service_type)
+        return f[0] if f else None
+
+    @staticmethod
+    def resolve_all(req: AbstractServiceRequest,
+                    services: Mapping[Type, List[ServiceFactory]]) -> Sequence[ServiceFactory]:
+        factories = []
+        search_stack = [services]
+
+        while len(search_stack):
+            mapping = search_stack.pop()
+            if isinstance(mapping, ChainMap):
+                search_stack.extend(reversed(mapping.maps))
+            elif isinstance(mapping, ServiceContainer):
+                factories.extend(Resolver.resolve_all(req, mapping._registry))
+            else:
+                factories.extend(mapping.get(req.service_type, []))
+
+        return factories
+
+
+class DefaultResolver(Resolver):
+    pass
+
+
 class ServiceContainer(AbstractServiceContainer, AbstractServiceProvider, ServiceScope):
 
-    def __init__(self, *factories: Mapping[Type, List[ServiceFactory]]):
+    def __init__(self, *factories: Mapping[Type, List[ServiceFactory]],
+                 resolver: Resolver = None):
         super().__init__()
         self._registry = ChainMap[Type, List[ServiceFactory]]({}, *factories)
+        self._resolver: Resolver = resolver or DefaultResolver()
 
     def __hash__(self) -> int:
         return id(self)
@@ -46,25 +77,31 @@ class ServiceContainer(AbstractServiceContainer, AbstractServiceProvider, Servic
         self.dispose()
         log.debug('exited service scope')
 
-    def get_service(self, service_type: Type[TService]) -> Optional[TService]:
-        if issubclass(service_type, AbstractServiceProvider):
-            return self.create_scope()
-        service_factory = self._registry.get(service_type, None)
-        if not service_factory:
-            return None
-        return service_factory[0](service_type, self)
+    def get_service(self, request: Request[TService]) -> Optional[TService]:
+        if not isinstance(request, AbstractServiceRequest):
+            request = BasicRequest(request)
 
-    def get_required_service(self, service_type: Type[TService]) -> TService:
-        service = self.get_service(service_type)
+        if issubclass(request.service_type, AbstractServiceProvider):
+            return self.create_scope()
+
+        service_factory = self._resolver.resolve(request, self._registry)
+        return service_factory(request, self) if service_factory else None
+
+    def get_required_service(self, request: Request[TService]) -> TService:
+        service = self.get_service(request)
         if service is None:
-            raise MissingServiceError(service_type)
+            raise MissingServiceError(request)
         return service
 
-    def get_services(self, service_type: Type[TService]) -> List[TService]:
-        if issubclass(service_type, AbstractServiceProvider):
+    def get_services(self, request: Request[TService]) -> List[TService]:
+        if not isinstance(request, AbstractServiceRequest):
+            request = BasicRequest(request)
+
+        if issubclass(request.service_type, AbstractServiceProvider):
             return [self.create_scope()]
-        factories = itertools.chain(*(m.get(service_type, []) for m in self._registry.maps))
-        return [f(service_type, self) for f in factories]
+
+        factories = self._resolver.resolve_all(request, self._registry)
+        return [f(request, self) for f in factories]
 
     def register(self, *other: AbstractServiceContainer):
         self._registry.maps.extend(other)

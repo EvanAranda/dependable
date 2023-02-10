@@ -2,7 +2,8 @@ from dataclasses import dataclass
 
 import pytest
 
-from di_ioc import ServiceContainer, MissingServiceError
+from di_ioc import ServiceContainer, MissingServiceError, auto
+from di_ioc.abstraction import BasicRequest
 
 
 @dataclass
@@ -44,3 +45,11 @@ def test_get_multiple_services(realistic_container: ServiceContainer):
 
 def test_get_multiple_missing_services(realistic_container: ServiceContainer):
     assert realistic_container.get_services(UnregisteredService) == []
+
+
+def test_request_with_arg_override():
+    container = ServiceContainer()
+    container[MyService] = auto(MyService)
+    req = BasicRequest(MyService, args={'value': 1})
+    service = container.get_required_service(req)
+    assert service.value == 1

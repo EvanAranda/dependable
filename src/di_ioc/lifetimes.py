@@ -1,9 +1,10 @@
 import inspect
 from dataclasses import dataclass
-from typing import Callable, Type, Dict, Generator, \
+from typing import Callable, Dict, Generator, \
     Any, Generic
 
-from .abstraction import AbstractServiceProvider, ServiceFactory, ServiceFactoryGenerator, TService, AbstractLifetime
+from .abstraction import AbstractServiceProvider, ServiceFactory, ServiceFactoryGenerator, TService, AbstractLifetime, \
+    AbstractServiceRequest
 from .scope import ServiceScope
 
 
@@ -33,8 +34,9 @@ class DisposableServiceInstance(ServiceInstance):
             raise
 
 
-def create_service_instance(t: Type, s: AbstractServiceProvider, f: Callable, cleanup: Callable):
-    x = f(t, s)
+def create_service_instance(req: AbstractServiceRequest[TService], s: AbstractServiceProvider, f: Callable,
+                            cleanup: Callable):
+    x = f(req, s)
     if inspect.isgenerator(x):
         if isinstance(s, ServiceScope):
             s.on_dispose.append(cleanup)
@@ -58,9 +60,9 @@ class singleton(Generic[TService], AbstractLifetime, ServiceFactory[TService]):
             self.instance.dispose()
             self.instance = None
 
-    def __call__(self, t: Type, s: AbstractServiceProvider):
+    def __call__(self, req: AbstractServiceRequest[TService], s: AbstractServiceProvider):
         if self.instance is None:
-            self.instance = create_service_instance(t, s, self.f, self.dispose)
+            self.instance = create_service_instance(req, s, self.f, self.dispose)
         return self.instance.value
 
     def __repr__(self):
@@ -77,9 +79,9 @@ class scoped(Generic[TService], AbstractLifetime, ServiceFactory[TService]):
             instance.dispose()
             del self.instances[s]
 
-    def __call__(self, t: Type, s: AbstractServiceProvider):
+    def __call__(self, req: AbstractServiceRequest[TService], s: AbstractServiceProvider):
         if (instance := self.instances.get(s)) is None:
-            instance = create_service_instance(t, s, self.f, self.dispose)
+            instance = create_service_instance(req, s, self.f, self.dispose)
             self.instances[s] = instance
 
         return instance.value

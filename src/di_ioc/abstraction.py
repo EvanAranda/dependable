@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Callable, Type, TypeVar, Optional, ContextManager, Generator, \
-    Hashable, Self, MutableMapping, List, Mapping, Iterable
+    Hashable, Self, MutableMapping, List, Mapping, Iterable, Generic, Any
 
 TService = TypeVar('TService')
 
@@ -11,29 +11,57 @@ class MissingServiceError(Exception):
         super().__init__()
 
 
+class AbstractServiceRequest(Generic[TService]):
+    @property
+    @abstractmethod
+    def service_type(self) -> Type[TService]:
+        """
+        The requested service_type
+        :return:
+        """
+
+
+class BasicRequest(Generic[TService], AbstractServiceRequest[TService]):
+
+    def __init__(self, service_type: Type[TService], args: Mapping[str, Any] = None):
+        self._service_type = service_type
+        self._args: Mapping[str, Any] = args or {}
+
+    @property
+    def service_type(self) -> Type[TService]:
+        return self._service_type
+
+    @property
+    def arg_overrides(self) -> Mapping[str, Any]:
+        return self._args
+
+
+Request = Type[TService] | AbstractServiceRequest[TService]
+
+
 class AbstractServiceProvider(Hashable, ContextManager[Self], ABC):
     @abstractmethod
-    def get_service(self, service_type: Type[TService]) -> Optional[TService]:
+    def get_service(self, request: Request[TService]) -> Optional[TService]:
         """
         Try to get a service instance if it exists.
-        :param service_type:
+        :param request:
         :return: the service instance or None.
         """
 
     @abstractmethod
-    def get_required_service(self, service_type: Type[TService]) -> TService:
+    def get_required_service(self, request: Request[TService]) -> TService:
         """
         Get a service instance or fail with an exception.
-        :param service_type:
+        :param request:
         :return: the service instance.
-        :raises: MissingServiceError - there is not a service registered under the service_type.
+        :raises MissingServiceError: there is not a service registered under the service_type.
         """
 
     @abstractmethod
-    def get_services(self, service_type: Type[TService]) -> List[TService]:
+    def get_services(self, request: Request[TService]) -> List[TService]:
         """
         Produce a list of all services that satisfy the service_type.
-        :param service_type:
+        :param request:
         :return: list of all service instances that match the service_type.
         """
 
@@ -48,8 +76,10 @@ class AbstractServiceProvider(Hashable, ContextManager[Self], ABC):
 
 
 DisposableServiceInstance = Generator[TService, None, None]
-ServiceFactory = Callable[[Type[TService], AbstractServiceProvider], TService]
-ServiceFactoryGenerator = Callable[[Type[TService], AbstractServiceProvider], DisposableServiceInstance[TService]]
+ServiceFactory = Callable[[AbstractServiceRequest[TService], AbstractServiceProvider], TService]
+ServiceFactoryGenerator = Callable[
+    [AbstractServiceRequest[TService], AbstractServiceProvider],
+    DisposableServiceInstance[TService]]
 
 
 class AbstractServiceContainer(MutableMapping[Type | Iterable[Type], ServiceFactory],

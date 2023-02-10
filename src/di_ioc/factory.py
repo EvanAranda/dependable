@@ -2,19 +2,24 @@ import inspect
 import typing
 from typing import Callable, Type, Generic, List, Iterable
 
-from .abstraction import TService, ServiceFactory, AbstractServiceProvider
+from .abstraction import TService, ServiceFactory, AbstractServiceProvider, AbstractServiceRequest, BasicRequest
 
 ServiceCtor = Callable[[...], TService]
 
 
 class DepResolver(Generic[TService]):
-    def __init__(self, service_type: Type[TService], fallback: TService | None = None, required=True, find_all=False):
+    def __init__(self, param_name: str, service_type: Type[TService], fallback: TService | None = None, required=True,
+                 find_all=False):
+        self.param_name = param_name
         self.service_type = service_type
         self.fallback = fallback
         self.required = required
         self.find_all = find_all
 
-    def __call__(self, sp: AbstractServiceProvider):
+    def __call__(self, req: AbstractServiceRequest, sp: AbstractServiceProvider):
+        if isinstance(req, BasicRequest) and self.param_name in req.arg_overrides:
+            return req.arg_overrides[self.param_name]
+
         if self.find_all:
             return sp.get_services(self.service_type)
 
@@ -49,14 +54,14 @@ class DerivedServiceFactory(Generic[TService], ServiceFactory[TService]):
 
             if p.default != inspect.Parameter.empty:
                 # has default
-                self.dep_resolvers.append(DepResolver(p.annotation, p.default, False))
+                self.dep_resolvers.append(DepResolver(p.name, p.annotation, p.default, False))
             elif type(None) in typing.get_args(p.annotation):
                 # optional
                 type_args = list(typing.get_args(p.annotation))
                 type_args.remove(type(None))
                 if len(type_args) == 0:
                     raise _param_error(p.name, ctor.__name__, 'has an optional type annotation that is None')
-                self.dep_resolvers.append(DepResolver(type_args[0], None, False))
+                self.dep_resolvers.append(DepResolver(p.name, type_args[0], None, False))
             else:
                 # required
                 type_origin = typing.get_origin(p.annotation)
@@ -65,12 +70,14 @@ class DerivedServiceFactory(Generic[TService], ServiceFactory[TService]):
                     if len(type_args) == 0:
                         raise _param_error(p.name, ctor.__name__, 'has a list/iterable type annotation without an valid'
                                                                   'element type')
-                    self.dep_resolvers.append(DepResolver(type_args[0], find_all=True))
+                    self.dep_resolvers.append(DepResolver(p.name, type_args[0], find_all=True))
                 else:
-                    self.dep_resolvers.append(DepResolver(p.annotation))
+                    self.dep_resolvers.append(DepResolver(p.name, p.annotation))
 
-    def __call__(self, t: Type[TService], sp: AbstractServiceProvider) -> TService:
-        return self.ctor(*(f(sp) for f in self.dep_resolvers))
+    def __call__(self, req: AbstractServiceRequest[TService], sp: AbstractServiceProvider) -> TService:
+        return self.ctor(
+            *(f(req, sp)
+              for f in self.dep_resolvers))
 
 
 def _param_error(name: str, ctor_name: str, reason: str):
